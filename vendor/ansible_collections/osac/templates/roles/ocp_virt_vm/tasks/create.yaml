@@ -174,12 +174,14 @@
     api_version: storage.k8s.io/v1
     kind: StorageClass
   register: storage_classes
+  when: tenant_storage_class_name is not defined
 
 - name: Set default StorageClass
   ansible.builtin.set_fact:
     storage_class: "{{ item.metadata.name }}"
   loop: "{{ storage_classes.resources }}"
   when:
+    - tenant_storage_class_name is not defined
     - "'storageclass.kubernetes.io/is-default-class' in item.metadata.annotations"
     - item.metadata.annotations['storageclass.kubernetes.io/is-default-class'] | bool
 
@@ -191,6 +193,21 @@
         | default(lookup('env', 'OSAC_VM_OPERATIONS_STORAGE_CLASS'), true)
         | default(storage_class, true)
       }}
+  when: tenant_storage_class_name is not defined
+
+- name: Require non-empty tenant StorageClass when tenant provisioning
+  ansible.builtin.assert:
+    that: tenant_storage_class_name | length > 0
+    fail_msg: >-
+      Tenant provisioning requires a StorageClass for the tenant.
+      tenant_storage_class_name is set but empty; operation cannot use cluster default.
+    success_msg: "Using tenant StorageClass: {{ tenant_storage_class_name }}"
+  when: tenant_storage_class_name is defined
+
+- name: Set storage_class from tenant (and optional spec override)
+  ansible.builtin.set_fact:
+    storage_class: "{{ vm_boot_disk_storage_class or tenant_storage_class_name }}"
+  when: tenant_storage_class_name is defined
 
 - name: Using vmaas_storage_class
   ansible.builtin.debug:
